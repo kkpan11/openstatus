@@ -1,94 +1,71 @@
-import { cva } from "class-variance-authority";
-import type { z } from "zod";
-
 import type {
-  selectPublicMonitorSchema,
-  selectStatusReportPageSchema,
+  Incident,
+  Maintenance,
+  StatusReport,
 } from "@openstatus/db/src/schema";
+import type { StatusVariant } from "@openstatus/tracker";
+import { Tracker } from "@openstatus/tracker";
 
-import { getResponseListData } from "@/lib/tb";
-import type { StatusVariant } from "@/lib/tracker";
-import { calcStatus } from "@/lib/tracker";
-import { cn, notEmpty } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { Icons } from "../icons";
-
-const check = cva("border-border rounded-full border p-1.5", {
-  variants: {
-    variant: {
-      up: "bg-green-500/80 border-green-500",
-      down: "bg-red-500/80 border-red-500",
-      degraded: "bg-yellow-500/80 border-yellow-500",
-      empty: "bg-gray-500/80 border-gray-500",
-      incident: "bg-yellow-500/80 border-yellow-500",
-    },
-  },
-  defaultVariants: {
-    variant: "up",
-  },
-});
+import { DateTimeTooltip } from "./datetime-tooltip";
 
 export async function StatusCheck({
   statusReports,
-  monitors,
+  incidents,
+  maintenances,
 }: {
-  statusReports: z.infer<typeof selectStatusReportPageSchema>;
-  monitors: z.infer<typeof selectPublicMonitorSchema>[];
+  statusReports?: StatusReport[];
+  incidents?: Incident[];
+  maintenances?: Maintenance[];
 }) {
-  const isIncident = statusReports.some(
-    (incident) => !["monitoring", "resolved"].includes(incident.status),
-  );
-
-  const monitorsData = (
-    await Promise.all(
-      monitors.map((monitor) => {
-        return getResponseListData({
-          monitorId: String(monitor.id),
-          limit: 10,
-        });
-      }),
-    )
-  ).filter(notEmpty);
-
-  const status = calcStatus(monitorsData);
-
-  const incident = {
-    label: "Incident",
-    variant: "incident",
-  } as const;
-
-  const { label, variant } = isIncident ? incident : status;
+  const tracker = new Tracker({ statusReports, incidents, maintenances });
+  const className = tracker.currentClassName;
+  const details = tracker.currentDetails;
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="flex items-center gap-3">
-        <p className="text-lg font-semibold">{label}</p>
-        <span className={check({ variant })}>
-          <StatusIcon variant={variant} />
-        </span>
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-lg border p-3",
+        containerClassName(details.variant),
+      )}
+    >
+      <span className={cn("rounded-full border p-1.5", className)}>
+        <StatusIcon variant={details.variant} />
+      </span>
+      <div className="flex w-full flex-wrap items-center justify-between gap-1">
+        <h2 className="font-semibold text-xl">{details.long}</h2>
+        <p className="text-xs">
+          <DateTimeTooltip date={new Date()} />
+        </p>
       </div>
-      <p className="text-muted-foreground text-xs">Status Check</p>
     </div>
   );
 }
 
-interface StatusIconProps {
-  variant: StatusVariant | "incident";
-  className?: string;
+function containerClassName(variant: StatusVariant) {
+  if (variant === "incident") return "bg-status-down/10 border-status-down/20";
+  if (variant === "maintenance")
+    return "bg-status-monitoring/10 border-status-monitoring/20";
+  if (variant === "degraded")
+    return "bg-status-degraded/10 border-status-degraded/20";
+  if (variant === "down") return "bg-status-down/10 border-status-down/20";
+  return "bg-status-operational/10 border-status-operational/20";
 }
 
-function StatusIcon({ variant, className }: StatusIconProps) {
-  const rootClassName = cn("h-5 w-5 text-background", className);
-  const MinusIcon = Icons["minus"];
-  const CheckIcon = Icons["check"];
-  const AlertTriangleIcon = Icons["alert-triangle"];
+export function StatusIcon({ variant }: { variant: StatusVariant }) {
   if (variant === "incident") {
-    return <AlertTriangleIcon className={rootClassName} />;
+    const AlertTriangleIcon = Icons["alert-triangle"];
+    return <AlertTriangleIcon className="h-5 w-5 text-background" />;
+  }
+  if (variant === "maintenance") {
+    return <Icons.hammer className="h-5 w-5 text-background" />;
   }
   if (variant === "degraded") {
-    return <MinusIcon className={rootClassName} />;
+    return <Icons.minus className="h-5 w-5 text-background" />;
   }
   if (variant === "down") {
-    return <MinusIcon className={rootClassName} />;
+    return <Icons.minus className="h-5 w-5 text-background" />;
   }
-  return <CheckIcon className={rootClassName} />;
+  return <Icons.check className="h-5 w-5 text-background" />;
 }

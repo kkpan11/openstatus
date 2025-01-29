@@ -1,31 +1,14 @@
-import type { Ping } from "@openstatus/tinybird";
-import { Badge } from "@openstatus/ui";
+import { Badge } from "@openstatus/ui/src/components/badge";
 
-import { cn } from "@/lib/utils";
+import { StatusCodeBadge } from "@/components/monitor/status-code-badge";
 
 export function DataTableStatusBadge({
   statusCode,
 }: {
-  statusCode: Ping["statusCode"];
+  statusCode?: number | null;
 }) {
-  const isOk = String(statusCode).startsWith("2");
-  return (
-    <Badge
-      variant="outline"
-      className={cn(
-        "px-2 py-0.5 text-xs",
-        isOk
-          ? "border-green-500/20 bg-green-500/10"
-          : "border-red-500/20 bg-red-500/10",
-      )}
-    >
-      {statusCode || "Error"}
-      <div
-        className={cn(
-          "bg-foreground ml-1 h-1.5 w-1.5 rounded-full",
-          isOk ? "bg-green-500" : "bg-red-500",
-        )}
-      />
-    </Badge>
-  );
+  if (!statusCode) {
+    return <Badge variant="destructive">Error</Badge>;
+  }
+  return <StatusCodeBadge statusCode={statusCode} />;
 }

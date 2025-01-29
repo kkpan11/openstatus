@@ -1,4 +1,3 @@
-import { getLimits } from "@openstatus/plans";
 import { Progress, Separator } from "@openstatus/ui";
 
 import { api } from "@/trpc/server";
@@ -9,24 +8,25 @@ export default async function BillingPage() {
   const workspace = await api.workspace.getWorkspace.query();
   const currentNumbers = await api.workspace.getCurrentWorkspaceNumbers.query();
 
-  const limits = getLimits(workspace.plan);
-
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-lg font-medium">
+        <h3 className="font-medium text-lg">
           <span className="capitalize">{workspace.plan}</span> plan
         </h3>
         <CustomerPortalButton workspaceSlug={workspace.slug} />
       </div>
       <div className="grid max-w-lg gap-3">
         {Object.entries(currentNumbers).map(([key, value]) => {
-          const limit = limits[key as keyof typeof currentNumbers];
+          const limit = workspace.limits[key as keyof typeof currentNumbers];
+          // TODO: find a better way to determine if the limit is monthly
+          const isMonthly = ["synthetic-checks"].includes(key);
           return (
             <div key={key}>
-              <div className="text-muted-foreground mb-1 flex items-center justify-between">
+              <div className="mb-1 flex items-center justify-between text-muted-foreground">
                 <p className="text-sm capitalize">{key.replace("-", " ")}</p>
                 <p className="text-xs">
+                  {isMonthly ? "monthly" : null}{" "}
                   <span className="text-foreground">{value}</span> / {limit}
                 </p>
               </div>

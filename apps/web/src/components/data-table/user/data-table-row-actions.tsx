@@ -1,9 +1,9 @@
 "use client";
 
-import * as React from "react";
-import { useRouter } from "next/navigation";
 import type { Row } from "@tanstack/react-table";
 import { MoreHorizontal } from "lucide-react";
+import { useRouter } from "next/navigation";
+import * as React from "react";
 
 import { selectUserSchema } from "@openstatus/db/src/schema";
 import {
@@ -24,7 +24,7 @@ import {
 } from "@openstatus/ui";
 
 import { LoadingAnimation } from "@/components/loading-animation";
-import { useToastAction } from "@/hooks/use-toast-action";
+import { toast, toastAction } from "@/lib/toast";
 import { api } from "@/trpc/client";
 
 interface DataTableRowActionsProps<TData> {
@@ -36,7 +36,6 @@ export function DataTableRowActions<TData>({
 }: DataTableRowActionsProps<TData>) {
   const user = selectUserSchema.parse(row.original);
   const router = useRouter();
-  const { toast } = useToastAction();
   const [alertOpen, setAlertOpen] = React.useState(false);
   const [isPending, startTransition] = React.useTransition();
 
@@ -45,11 +44,16 @@ export function DataTableRowActions<TData>({
       try {
         if (!user.id) return;
         await api.workspace.removeWorkspaceUser.mutate({ id: user.id });
-        toast("removed");
+        toastAction("removed");
         router.refresh();
         setAlertOpen(false);
-      } catch {
-        toast("error");
+      } catch (error) {
+        if (error instanceof Error) {
+          toast.error(error.message);
+        } else {
+          toastAction("error");
+        }
+        setAlertOpen(false);
       }
     });
   }
@@ -60,7 +64,7 @@ export function DataTableRowActions<TData>({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="data-[state=open]:bg-accent h-8 w-8 p-0"
+            className="h-8 w-8 p-0 data-[state=open]:bg-accent"
           >
             <span className="sr-only">Open menu</span>
             <MoreHorizontal className="h-4 w-4" />

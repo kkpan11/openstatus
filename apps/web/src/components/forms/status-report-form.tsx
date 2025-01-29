@@ -1,8 +1,8 @@
 "use client";
 
-import * as React from "react";
-import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useRouter } from "next/navigation";
+import * as React from "react";
 import { useForm } from "react-hook-form";
 
 import {
@@ -22,7 +22,7 @@ import {
   AccordionTrigger,
   Button,
   Checkbox,
-  DateTimePicker,
+  DateTimePickerPopover,
   Form,
   FormControl,
   FormDescription,
@@ -44,22 +44,22 @@ import { Preview } from "@/components/content/preview";
 import { Icons } from "@/components/icons";
 import { LoadingAnimation } from "@/components/loading-animation";
 import { statusDict } from "@/data/incidents-dictionary";
-import { useToastAction } from "@/hooks/use-toast-action";
+import { toastAction } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/client";
 
 interface Props {
   defaultValues?: InsertStatusReport;
   monitors?: Monitor[];
-  pages?: Page[];
   nextUrl?: string;
+  pageId: number;
 }
 
 export function StatusReportForm({
   defaultValues,
   monitors,
-  pages,
   nextUrl,
+  pageId,
 }: Props) {
   const form = useForm<InsertStatusReport>({
     resolver: zodResolver(insertStatusReportSchema),
@@ -69,7 +69,6 @@ export function StatusReportForm({
           title: defaultValues.title,
           status: defaultValues.status,
           monitors: defaultValues.monitors,
-          pages: defaultValues.pages,
           // include update on creation
           message: defaultValues.message,
           date: defaultValues.date,
@@ -81,19 +80,22 @@ export function StatusReportForm({
   });
   const router = useRouter();
   const [isPending, startTransition] = React.useTransition();
-  const { toast } = useToastAction();
 
   const onSubmit = ({ ...props }: InsertStatusReport) => {
     startTransition(async () => {
       try {
         if (defaultValues) {
-          await api.statusReport.updateStatusReport.mutate({ ...props });
+          await api.statusReport.updateStatusReport.mutate({
+            pageId,
+            ...props,
+          });
         } else {
           const { message, date, status, ...rest } = props;
           const statusReport = await api.statusReport.createStatusReport.mutate(
             {
               status,
               message,
+              pageId,
               ...rest,
             },
           );
@@ -111,9 +113,9 @@ export function StatusReportForm({
           router.push(nextUrl);
         }
         router.refresh();
-        toast("saved");
+        toastAction("saved");
       } catch {
-        toast("error");
+        toastAction("error");
       }
     });
   };
@@ -129,7 +131,7 @@ export function StatusReportForm({
       >
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="my-1.5 flex flex-col gap-2">
-            <p className="text-sm font-semibold leading-none">Inform</p>
+            <p className="font-semibold text-sm leading-none">Inform</p>
             <p className="text-muted-foreground text-sm">
               Keep your users informed about what just happened.
             </p>
@@ -176,7 +178,7 @@ export function StatusReportForm({
                                 className="sr-only"
                               />
                             </FormControl>
-                            <div className="border-border text-muted-foreground flex w-full items-center justify-center rounded-lg border px-3 py-2 text-center text-sm">
+                            <div className="flex w-full items-center justify-center rounded-lg border border-border px-3 py-2 text-center text-muted-foreground text-sm">
                               <Icon className="mr-2 h-4 w-4 shrink-0" />
                               <span className="truncate">{label}</span>
                             </div>
@@ -243,69 +245,9 @@ export function StatusReportForm({
                                         ? "bg-green-500"
                                         : "bg-red-500",
                                     )}
-                                  ></span>
+                                  />
                                 </div>
-                                <p className="text-muted-foreground truncate text-sm">
-                                  {item.description}
-                                </p>
-                              </div>
-                            </FormItem>
-                          );
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="pages"
-              render={() => (
-                <FormItem className="sm:col-span-full">
-                  <div className="mb-4">
-                    <FormLabel>Pages</FormLabel>
-                    <FormDescription>
-                      Select the pages that you want to refer the incident to.
-                    </FormDescription>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                    {pages?.map((item) => (
-                      <FormField
-                        key={item.id}
-                        control={form.control}
-                        name="pages"
-                        render={({ field }) => {
-                          return (
-                            <FormItem
-                              key={item.id}
-                              className="flex flex-row items-start space-x-3 space-y-0"
-                            >
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value?.includes(item.id)}
-                                  onCheckedChange={(checked) => {
-                                    return checked
-                                      ? field.onChange([
-                                          ...(field.value || []),
-                                          item.id,
-                                        ])
-                                      : field.onChange(
-                                          field.value?.filter(
-                                            (value) => value !== item.id,
-                                          ),
-                                        );
-                                  }}
-                                />
-                              </FormControl>
-                              <div className="grid gap-1.5 leading-none">
-                                <div className="flex items-center gap-2">
-                                  <FormLabel className="font-normal">
-                                    {item.title}
-                                  </FormLabel>
-                                </div>
-                                <p className="text-muted-foreground truncate text-sm">
+                                <p className="truncate text-muted-foreground text-sm">
                                   {item.description}
                                 </p>
                               </div>
@@ -329,7 +271,7 @@ export function StatusReportForm({
               <AccordionContent>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="my-1.5 flex flex-col gap-2">
-                    <p className="text-sm font-semibold leading-none">
+                    <p className="font-semibold text-sm leading-none">
                       Status Update
                     </p>
                     <p className="text-muted-foreground text-sm">
@@ -376,7 +318,7 @@ export function StatusReportForm({
                       render={({ field }) => (
                         <FormItem className="flex flex-col sm:col-span-full">
                           <FormLabel>Date</FormLabel>
-                          <DateTimePicker
+                          <DateTimePickerPopover
                             date={
                               field.value ? new Date(field.value) : new Date()
                             }

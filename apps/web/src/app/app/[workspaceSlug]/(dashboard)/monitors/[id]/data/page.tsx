@@ -1,55 +1,64 @@
-import * as React from "react";
 import { notFound } from "next/navigation";
-import * as z from "zod";
+import * as React from "react";
 
-import { columns } from "@/components/data-table/columns";
-import { DataTable } from "@/components/data-table/data-table";
-import { getResponseListData } from "@/lib/tb";
+import { DatePickerPreset } from "@/components/monitor-dashboard/date-picker-preset";
+import { prepareListByPeriod } from "@/lib/tb";
 import { api } from "@/trpc/server";
-import { DatePickerPreset } from "../_components/date-picker-preset";
-import { getDateByPeriod, periods } from "../utils";
+import { DataTableWrapper } from "./_components/data-table-wrapper";
+import { searchParamsCache } from "./search-params";
 
-/**
- * allowed URL search params
- */
-const searchParamsSchema = z.object({
-  period: z.enum(periods).optional().default("1h"),
-});
-
-export default async function Page({
-  params,
-  searchParams,
-}: {
-  params: { workspaceSlug: string; id: string };
-  searchParams: { [key: string]: string | string[] | undefined };
+export default async function Page(props: {
+  params: Promise<{ workspaceSlug: string; id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const id = params.id;
-  const search = searchParamsSchema.safeParse(searchParams);
+  const search = searchParamsCache.parse(searchParams);
 
   const monitor = await api.monitor.getMonitorById.query({
     id: Number(id),
   });
 
-  if (!monitor || !search.success) {
-    return notFound();
-  }
+  if (!monitor) return notFound();
 
-  const date = getDateByPeriod(search.data.period);
+  const type = monitor.jobType as "http" | "tcp";
 
-  const data = await getResponseListData({
+  // FIXME: make it dynamic based on the workspace plan
+  const allowedPeriods = ["1d", "7d", "14d"] as const;
+  const period = allowedPeriods.find((i) => i === search.period) || "1d";
+
+  const res = await prepareListByPeriod(period, type).getData({
     monitorId: id,
-    fromDate: date.from.getTime(),
-    toDate: date.to.getTime(),
   });
 
-  if (!data) return null;
+  if (!res.data || res.data.length === 0) return null;
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        <DatePickerPreset period={search.data.period} />
+      <div className="flex flex-row items-center justify-between gap-4">
+        <DatePickerPreset defaultValue={period} values={allowedPeriods} />
+        {/* <DownloadCSVButton
+          data={data}
+          filename={`${format(new Date(), "yyyy-mm-dd")}-${period}-${
+            monitor.name
+          }`}
+        /> */}
       </div>
-      <DataTable columns={columns} data={data} />
+      {/* FIXME: we display all the regions even though a user might not have all supported in their plan */}
+      <DataTableWrapper
+        data={res.data}
+        filters={[
+          { id: "statusCode", value: search.statusCode },
+          { id: "region", value: search.regions },
+          { id: "error", value: search.error },
+          { id: "trigger", value: search.trigger },
+        ].filter((v) => v.value !== null)}
+        pagination={{
+          pageIndex: search.pageIndex,
+          pageSize: search.pageSize,
+        }}
+      />
     </div>
   );
 }

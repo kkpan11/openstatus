@@ -1,10 +1,11 @@
 "use client";
 
-import * as React from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import type { Row } from "@tanstack/react-table";
 import { MoreHorizontal } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
+import { z } from "zod";
 
 import { selectMonitorSchema } from "@openstatus/db/src/schema";
 import {
@@ -26,8 +27,11 @@ import {
 } from "@openstatus/ui";
 
 import { LoadingAnimation } from "@/components/loading-animation";
-import { useToastAction } from "@/hooks/use-toast-action";
+import type { RegionChecker } from "@/components/ping-response-analysis/utils";
+import { toast, toastAction } from "@/lib/toast";
 import { api } from "@/trpc/client";
+
+import type { TCPResponse } from "@/app/api/checker/test/tcp/schema";
 
 interface DataTableRowActionsProps<TData> {
   row: Row<TData>;
@@ -36,58 +40,94 @@ interface DataTableRowActionsProps<TData> {
 export function DataTableRowActions<TData>({
   row,
 }: DataTableRowActionsProps<TData>) {
-  const monitor = selectMonitorSchema.parse(row.original);
+  const { monitor, isLimitReached } = z
+    .object({ monitor: selectMonitorSchema, isLimitReached: z.boolean() })
+    .parse(row.original);
   const router = useRouter();
-  const { toast } = useToastAction();
-  const [alertOpen, setAlertOpen] = React.useState(false);
-  const [isPending, startTransition] = React.useTransition();
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [isPending, startTransition] = useTransition();
 
   async function onDelete() {
     startTransition(async () => {
       try {
         if (!monitor.id) return;
         await api.monitor.delete.mutate({ id: monitor.id });
-        toast("deleted");
+        toastAction("deleted");
         router.refresh();
         setAlertOpen(false);
       } catch {
-        toast("error");
+        toastAction("error");
       }
     });
   }
 
-  async function onToggleActive() {
-    startTransition(async () => {
-      try {
-        const { jobType, ...rest } = monitor;
-        if (!monitor.id) return;
-        await api.monitor.update.mutate({
-          ...rest,
-          active: !monitor.active,
-        });
-        toast("success");
-        router.refresh();
-      } catch {
-        toast("error");
-      }
-    });
-  }
-
+  // FIXME: the test doenst take the assertions into account!
+  // FIXME: improve (similar to the one in the edit form - also include toast.promise + better error message!)
   async function onTest() {
     startTransition(async () => {
-      const { url, body, method, headers } = monitor;
+      const { url, body, method, headers, jobType } = monitor;
 
-      const res = await fetch("/api/checker/test", {
-        method: "POST",
-        headers: new Headers({
-          "Content-Type": "application/json",
-        }),
-        body: JSON.stringify({ url, body, method, headers }),
-      });
-      if (res.ok) {
-        toast("test-success");
-      } else {
-        toast("test-error");
+      try {
+        const res = await fetch(`/api/checker/test/${jobType}`, {
+          method: "POST",
+          headers: new Headers({
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({ url, body, method, headers }),
+        });
+        const data = (await res.json()) as
+          | RegionChecker
+          | z.infer<typeof TCPResponse>;
+
+        // FIXME: assertions
+        const success =
+          data.type === "http"
+            ? data.status >= 200 && data.status < 300
+            : !data.error;
+
+        if (success) {
+          toastAction("test-success");
+        } else {
+          toastAction("test-error");
+        }
+      } catch {
+        toastAction("error");
+      }
+    });
+  }
+  async function onClone() {
+    startTransition(async () => {
+      try {
+        const id = monitor.id;
+        if (!id) return;
+
+        const selectedMonitorData = await api.monitor.getMonitorById.query({
+          id,
+        });
+
+        const { notificationIds, pageIds, monitorTagIds } =
+          await api.monitor.getMonitorRelationsById.query({ id });
+
+        const cloneMonitorData = {
+          ...selectedMonitorData,
+          name: `${selectedMonitorData.name} - copy`,
+          tags: monitorTagIds,
+          notifications: notificationIds,
+          pages: pageIds,
+          active: false,
+          id: undefined,
+          updatedAt: undefined,
+          createdAt: undefined,
+        };
+
+        // Create a clone function in the api
+        await api.monitor.create.mutate(cloneMonitorData);
+
+        toast.success("Monitor cloned!");
+        router.refresh();
+      } catch (error) {
+        console.log("error", error);
+        toastAction("error");
       }
     });
   }
@@ -98,7 +138,7 @@ export function DataTableRowActions<TData>({
         <DropdownMenuTrigger asChild>
           <Button
             variant="ghost"
-            className="data-[state=open]:bg-accent h-8 w-8 p-0"
+            className="h-8 w-8 p-0 data-[state=open]:bg-accent"
           >
             <span className="sr-only">Open menu</span>
             <MoreHorizontal className="h-4 w-4" />
@@ -111,11 +151,10 @@ export function DataTableRowActions<TData>({
           <Link href={`./monitors/${monitor.id}/overview`}>
             <DropdownMenuItem>Details</DropdownMenuItem>
           </Link>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onTest}>Test endpoint</DropdownMenuItem>
-          <DropdownMenuItem onClick={onToggleActive}>
-            {monitor.active ? "Pause" : "Resume"} monitor
+          <DropdownMenuItem onClick={onClone} disabled={isLimitReached}>
+            Clone
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={onTest}>Test</DropdownMenuItem>
           <DropdownMenuSeparator />
           <AlertDialogTrigger asChild>
             <DropdownMenuItem className="text-destructive focus:bg-destructive focus:text-background">

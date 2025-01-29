@@ -1,45 +1,47 @@
-import type { Monitor } from "@openstatus/tinybird";
+import { Tracker as OSTracker, classNames } from "@openstatus/tracker";
 
-import {
-  addBlackListInfo,
-  getStatus,
-  getTotalUptimeString,
-} from "@/lib/tracker";
+import type { ResponseStatusTracker } from "@/lib/tb";
 import { cn, formatDate } from "@/lib/utils";
 
-export function Tracker({ data }: { data: Monitor[] }) {
-  const _data = addBlackListInfo(data);
-  const uptime = getTotalUptimeString(data);
+interface TrackerProps {
+  data: ResponseStatusTracker[];
+}
+
+export function Tracker({ data }: TrackerProps) {
+  const tracker = new OSTracker({ data });
 
   return (
     <div tw="flex flex-col w-full my-12">
       <div tw="flex flex-col mx-auto">
         <div tw="flex flex-row items-center justify-between -mb-1 text-black font-light">
-          <p></p>
-          <p tw="font-medium">{uptime}</p>
+          <p tw="font-medium">{tracker.totalUptime}%</p>
         </div>
         {/* Empty State */}
         <div tw="flex flex-row relative">
           {new Array(data.length).fill(null).map((_, i) => {
+            // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
             return <div key={i} tw="h-16 w-3 rounded-full mr-1 bg-black/20" />;
           })}
           <div tw="flex flex-row-reverse absolute left-0">
-            {_data.map((item, i) => {
-              const { variant } = getStatus(item.ok / item.count);
+            {tracker.days.map((item, i) => {
               const isBlackListed = Boolean(item.blacklist);
               if (isBlackListed) {
                 return (
-                  <div key={i} tw="h-16 w-3 rounded-full mr-1 bg-green-400" />
+                  <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+                    key={i}
+                    tw="h-16 w-3 rounded-full mr-1 bg-status-operational/90"
+                  />
                 );
               }
               return (
                 <div
+                  // biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
                   key={i}
-                  tw={cn("h-16 w-3 rounded-full mr-1", {
-                    "bg-green-500": variant === "up",
-                    "bg-red-500": variant === "down",
-                    "bg-yellow-500": variant === "degraded",
-                  })}
+                  tw={cn(
+                    "h-16 w-3 rounded-full mr-1",
+                    classNames[item.variant],
+                  )}
                 />
               );
             })}

@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 
-export default function DashboardRedirect({
-  params,
-}: {
-  params: { workspaceId: string };
+export default async function DashboardRedirect(props: {
+  params: Promise<{ workspaceSlug: string }>;
 }) {
-  return redirect(`/app/${params.workspaceId}/monitors`);
+  const params = await props.params;
+  return redirect(`/app/${params.workspaceSlug}/monitors`);
 }

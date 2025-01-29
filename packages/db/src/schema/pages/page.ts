@@ -1,8 +1,9 @@
 import { relations, sql } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+import { maintenance } from "../maintenances";
 import { monitorsToPages } from "../monitors";
-import { pagesToStatusReports } from "../status_reports";
+import { statusReport } from "../status_reports";
 import { workspace } from "../workspaces";
 
 export const page = sqliteTable("page", {
@@ -19,6 +20,19 @@ export const page = sqliteTable("page", {
   customDomain: text("custom_domain", { length: 256 }).notNull(),
   published: integer("published", { mode: "boolean" }).default(false),
 
+  // Password protecting the status page - no specific restriction on password
+  password: text("password", { length: 256 }),
+  passwordProtected: integer("password_protected", { mode: "boolean" }).default(
+    false,
+  ),
+
+  /**
+   * Displays the total and failed request numbers for each monitor
+   */
+  showMonitorValues: integer("show_monitor_values", {
+    mode: "boolean",
+  }).default(true),
+
   createdAt: integer("created_at", { mode: "timestamp" }).default(
     sql`(strftime('%s', 'now'))`,
   ),
@@ -29,7 +43,8 @@ export const page = sqliteTable("page", {
 
 export const pageRelations = relations(page, ({ many, one }) => ({
   monitorsToPages: many(monitorsToPages),
-  pagesToStatusReports: many(pagesToStatusReports),
+  maintenancesToPages: many(maintenance),
+  statusReports: many(statusReport),
   workspace: one(workspace, {
     fields: [page.workspaceId],
     references: [workspace.id],

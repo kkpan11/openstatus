@@ -1,23 +1,36 @@
 import { notFound } from "next/navigation";
 
+import { Header } from "@/components/dashboard/header";
+import AppPageWithSidebarLayout from "@/components/layout/app-page-with-sidebar-layout";
 import { api } from "@/trpc/server";
 
-export default async function Layout({
-  children,
-  params,
-}: {
+export default async function Layout(props: {
   children: React.ReactNode;
-  params: { workspaceSlug: string; id: string };
+  params: Promise<{ workspaceSlug: string; id: string }>;
 }) {
+  const params = await props.params;
+
+  const { children } = props;
+
   const id = params.id;
 
-  const monitor = await api.incident.getIncidentById.query({
-    id: Number(id),
-  });
+  const [incidents, incident] = await Promise.all([
+    api.incident.getIncidentsByWorkspace.query(),
+    api.incident.getIncidentById.query({
+      id: Number(id),
+    }),
+  ]);
 
-  if (!monitor) {
+  if (!incident) {
     return notFound();
   }
 
-  return <div className="grid grid-cols-1 gap-6 md:gap-8">{children}</div>;
+  const incidentIndex = incidents.findIndex((item) => item.id === incident.id);
+
+  return (
+    <AppPageWithSidebarLayout id="incidents">
+      <Header title={`Incident #${incidentIndex + 1}`} />
+      {children}
+    </AppPageWithSidebarLayout>
+  );
 }

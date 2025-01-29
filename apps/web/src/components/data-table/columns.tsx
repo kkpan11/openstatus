@@ -2,22 +2,40 @@
 
 import type { ColumnDef } from "@tanstack/react-table";
 import { format } from "date-fns";
-import * as z from "zod";
+import type * as z from "zod";
 
-import type { Ping } from "@openstatus/tinybird";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@openstatus/ui";
-import { regionsDict } from "@openstatus/utils";
+import { flyRegionsDict } from "@openstatus/utils";
 
+import type { Trigger } from "@/lib/monitor/utils";
+import type { monitorFlyRegionSchema } from "@openstatus/db/src/schema/constants";
+import { TriggerIconWithTooltip } from "../monitor/trigger-icon-with-tooltip";
 import { DataTableColumnHeader } from "./data-table-column-header";
-import { DataTableRowActions } from "./data-table-row-action";
 import { DataTableStatusBadge } from "./data-table-status-badge";
 
-export const columns: ColumnDef<Ping>[] = [
+export type Check = {
+  type: "http" | "tcp";
+  monitorId: string;
+  latency: number;
+  region: z.infer<typeof monitorFlyRegionSchema>;
+  statusCode?: number | null;
+  timestamp: number;
+  workspaceId: string;
+  cronTimestamp: number | null;
+  error: boolean;
+  trigger: Trigger | null;
+};
+
+export const columns: ColumnDef<Check>[] = [
+  {
+    accessorKey: "error",
+    header: () => null,
+    cell: ({ row }) => {
+      if (row.original.error)
+        return <div className="h-2.5 w-2.5 rounded-full bg-rose-500" />;
+      return <div className="h-2.5 w-2.5 rounded-full bg-green-500" />;
+    },
+    filterFn: (row, id, value) => value.includes(row.getValue(id)),
+  },
   {
     accessorKey: "cronTimestamp",
     header: ({ column }) => (
@@ -37,28 +55,16 @@ export const columns: ColumnDef<Ping>[] = [
       <DataTableColumnHeader column={column} title="Status" />
     ),
     cell: ({ row }) => {
-      const unsafe_StatusCode = row.getValue("statusCode");
-      const statusCode = z.number().nullable().parse(unsafe_StatusCode);
-      const message = row.original.message;
+      const statusCode = row.getValue("statusCode") as
+        | number
+        | null
+        | undefined;
 
-      if (statusCode !== null) {
+      if (statusCode) {
         return <DataTableStatusBadge {...{ statusCode }} />;
       }
 
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger>
-              <DataTableStatusBadge {...{ statusCode }} />
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="text-muted-foreground max-w-xs sm:max-w-sm">
-                {message}
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      );
+      return <div className="text-muted-foreground">N/A</div>;
     },
     filterFn: (row, id, value) => {
       // get the first digit of the status code
@@ -70,6 +76,14 @@ export const columns: ColumnDef<Ping>[] = [
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title="Latency (ms)" />
     ),
+    filterFn: (row, id, value) => {
+      const { select, input } = value || {};
+      if (select === "min" && input)
+        return Number.parseInt(row.getValue(id)) > Number.parseInt(input);
+      if (select === "max" && input)
+        return Number.parseInt(row.getValue(id)) < Number.parseInt(input);
+      return true;
+    },
   },
   {
     accessorKey: "region",
@@ -81,7 +95,7 @@ export const columns: ColumnDef<Ping>[] = [
         <div>
           <span className="font-mono">{String(row.getValue("region"))} </span>
           <span className="text-muted-foreground text-xs">
-            {regionsDict[row.original.region]?.location}
+            {flyRegionsDict[row.original.region]?.location}
           </span>
         </div>
       );
@@ -91,13 +105,14 @@ export const columns: ColumnDef<Ping>[] = [
     },
   },
   {
-    id: "actions",
+    accessorKey: "trigger",
+    header: () => null,
     cell: ({ row }) => {
-      return (
-        <div className="text-right">
-          <DataTableRowActions row={row} />
-        </div>
-      );
+      const value = row.getValue("trigger") as Trigger;
+      return <TriggerIconWithTooltip triggerType={value} />;
+    },
+    filterFn: (row, id, value) => {
+      return value.includes(row.getValue(id));
     },
   },
 ];

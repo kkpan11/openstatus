@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
+import Link from "next/link";
 
 import type {
   StatusReport,
@@ -21,10 +21,7 @@ export const columns: ColumnDef<
     cell: ({ row }) => {
       const id = row.original.id;
       return (
-        <Link
-          href={`./status-reports/${id}/overview`}
-          className="hover:underline"
-        >
+        <Link href={`./reports/${id}/overview`} className="hover:underline">
           <span className="truncate">{row.getValue("title")}</span>
         </Link>
       );

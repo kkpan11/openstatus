@@ -1,6 +1,6 @@
-import { allUnrelateds } from "contentlayer/generated";
+import { allUnrelateds } from "content-collections";
 
-import { Separator } from "@openstatus/ui";
+import { Separator } from "@openstatus/ui/src/components/separator";
 
 import { Mdx } from "@/components/content/mdx";
 import { Shell } from "@/components/dashboard/shell";
@@ -14,13 +14,13 @@ export default function AboutPage() {
   return (
     <MarketingLayout>
       <div className="my-8 grid w-full gap-8">
-        <h1 className="text-foreground font-cal text-4xl">About OpenStatus</h1>
-        <div className="text-muted-foreground grid max-w-2xl gap-2 text-lg">
+        <h1 className="font-cal text-4xl text-foreground">About OpenStatus</h1>
+        <div className="grid max-w-2xl gap-2 text-lg text-muted-foreground">
           <p>
             OpenStatus is on a mission to provide a{" "}
-            <span className="text-foreground font-medium">reliable</span>,{" "}
-            <span className="text-foreground font-medium">easy</span> and{" "}
-            <span className="text-foreground font-medium">fast</span> way to
+            <span className="font-medium text-foreground">reliable</span>,{" "}
+            <span className="font-medium text-foreground">easy</span> and{" "}
+            <span className="font-medium text-foreground">fast</span> way to
             synthetically monitor your APIs and websites.
           </p>
           <p className="italic">Made by developers for developers.</p>
@@ -31,14 +31,14 @@ export default function AboutPage() {
               <Member {...member} />
             </li>
           ))}
-          <li></li>
+          <li />
         </ul>
         <Separator className="my-2" />
-        <Shell className="dark:border-card-foreground/30 mx-auto w-auto shadow sm:px-8 sm:py-8 md:px-12 md:py-12">
+        <Shell className="mx-auto w-auto shadow sm:px-8 sm:py-8 md:px-12 md:py-12 dark:border-card-foreground/30">
           {story ? (
             <Mdx
-              code={story.body.code}
-              className="sm:prose-lg prose-li:my-0 mx-auto"
+              code={story.mdx}
+              className="sm:prose-lg mx-auto prose-li:my-0"
             />
           ) : null}
         </Shell>
@@ -66,9 +66,9 @@ const members: MemberProps[] = [
     image: { src: "/assets/authors/thibault.jpeg" },
     socials: [
       {
-        label: "Twitter",
-        href: "https://twitter.com/thibaultleouay",
-        icon: "twitter",
+        label: "Bluesky",
+        href: "https://bsky.app/profile/thibaultleouay.dev",
+        icon: "bluesky",
       },
     ],
   },

@@ -1,30 +1,50 @@
 import type { z } from "zod";
 
 import type {
-  selectPublicMonitorSchema,
+  Incident,
+  Maintenance,
+  PublicMonitor,
   selectPublicStatusReportSchemaWithRelation,
 } from "@openstatus/db/src/schema";
 
-import { getMonitorListData } from "@/lib/tb";
-import { convertTimezoneToGMT } from "@/lib/timezone";
-import { Tracker } from "../tracker";
+import { Tracker } from "@/components/tracker/tracker";
+import { prepareStatusByPeriod } from "@/lib/tb";
 
 export const Monitor = async ({
   monitor,
   statusReports,
+  incidents,
+  maintenances,
+  showValues,
+  totalDays,
 }: {
-  monitor: z.infer<typeof selectPublicMonitorSchema>;
+  monitor: PublicMonitor;
   statusReports: z.infer<typeof selectPublicStatusReportSchemaWithRelation>[];
+  incidents: Incident[];
+  maintenances: Maintenance[];
+  showValues?: boolean;
+  totalDays?: number;
 }) => {
-  const gmt = convertTimezoneToGMT();
-  const data = await getMonitorListData({
+  const res = await prepareStatusByPeriod(
+    "45d",
+    monitor.jobType as "http" | "tcp",
+  ).getData({
     monitorId: String(monitor.id),
-    timezone: gmt,
+    days: totalDays,
   });
 
   // TODO: we could handle the `statusReports` here instead of passing it down to the tracker
 
-  if (!data) return <div>Something went wrong</div>;
+  if (!res.data) return <div>Something went wrong</div>;
 
-  return <Tracker data={data} reports={statusReports} {...monitor} />;
+  return (
+    <Tracker
+      data={res.data}
+      reports={statusReports}
+      incidents={incidents}
+      maintenances={maintenances}
+      showValues={showValues}
+      {...monitor}
+    />
+  );
 };
