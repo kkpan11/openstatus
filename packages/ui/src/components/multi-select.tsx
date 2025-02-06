@@ -1,11 +1,11 @@
 "use client";
 
-import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
 import { X } from "lucide-react";
+import * as React from "react";
 
 import { Badge } from "./badge";
-import { Command, CommandGroup, CommandItem } from "./command";
+import { Command, CommandGroup, CommandItem, CommandList } from "./command";
 
 type Option = Record<"value" | "label", string | number>;
 
@@ -48,15 +48,14 @@ export const MultiSelect = ({
         }
       }
     },
-    [],
+    []
   );
 
   const selectables = options.filter((option) => !selected.includes(option));
 
   React.useEffect(() => {
     onChange?.(selected);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected]);
+  }, [selected, onChange]);
 
   return (
     <Command
@@ -70,6 +69,7 @@ export const MultiSelect = ({
               <Badge key={option.value} variant="secondary">
                 {option.label}
                 <button
+                  type="button"
                   className="ring-offset-background focus:ring-ring ml-1 rounded-full outline-none focus:ring-2 focus:ring-offset-2"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -102,26 +102,29 @@ export const MultiSelect = ({
       <div className="relative mt-2">
         {open && selectables.length > 0 ? (
           <div className="bg-popover text-popover-foreground animate-in absolute top-0 z-10 w-full rounded-md border shadow-md outline-none">
-            <CommandGroup className="h-full overflow-auto">
-              {selectables.map((option) => {
-                return (
-                  <CommandItem
-                    key={option.value}
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    onSelect={(value) => {
-                      setInputValue("");
-                      setSelected((prev) => [...prev, option]);
-                    }}
-                    className={"cursor-pointer"}
-                  >
-                    {option.label}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
+            <CommandList>
+              <CommandGroup className="h-full overflow-auto">
+                {selectables.map((option) => {
+                  return (
+                    <CommandItem
+                      key={option.value}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      onSelect={(_value) => {
+                        setInputValue("");
+                        setSelected((prev) => [...prev, option]);
+                      }}
+                      value={String(option.label)}
+                      className={"cursor-pointer"}
+                    >
+                      {option.label}
+                    </CommandItem>
+                  );
+                })}
+              </CommandGroup>
+            </CommandList>
           </div>
         ) : null}
       </div>

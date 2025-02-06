@@ -1,49 +1,53 @@
-import { Suspense } from "react";
 import Link from "next/link";
+import { Suspense } from "react";
 
-import { Button } from "@openstatus/ui";
+import { Button } from "@openstatus/ui/src/components/button";
 
-import { Tracker } from "@/components/tracker";
-import { getHomeMonitorListData } from "@/lib/tb";
-import { convertTimezoneToGMT } from "@/lib/timezone";
+import { Tracker } from "@/components/tracker/tracker";
+import { prepareStatusByPeriod } from "@/lib/tb";
 
 export async function TrackerExample() {
   return (
     <div className="flex w-full flex-col items-center justify-center gap-8">
       <div className="mx-auto w-full max-w-md">
         <Suspense fallback={<ExampleTrackerFallback />}>
-          <ExampleTracker />
+          {/* <ExampleTracker /> */}
+          <MockTracker />
         </Suspense>
       </div>
-      <Button asChild variant="outline" className="rounded-full">
-        <Link href="/play/status">Playground</Link>
+      <Button className="rounded-full" asChild>
+        <Link href="/features/status-page">Learn more</Link>
       </Button>
     </div>
   );
 }
 
 function ExampleTrackerFallback() {
-  return (
-    <Tracker
-      data={[]}
-      id={1}
-      name="Ping"
-      url="https://www.openstatus.dev/api/ping"
-    />
-  );
+  return <Tracker data={[]} name="Ping" description="Pong" />;
 }
 
 async function ExampleTracker() {
-  const gmt = convertTimezoneToGMT();
-  const data = await getHomeMonitorListData({ timezone: gmt });
-  if (!data) return null;
+  const res = await prepareStatusByPeriod("45d").getData({
+    monitorId: "1",
+  });
+
+  if (!res.data) return null;
+  return <Tracker data={res.data} name="Ping" description="Pong" showValues />;
+}
+
+function MockTracker() {
   return (
-    <Tracker
-      data={data}
-      id={1}
-      name="Ping"
-      context="play"
-      url="https://www.openstatus.dev/api/ping"
-    />
+    <Tracker data={getPingData()} name="Ping" description="Pong" showValues />
   );
+}
+
+function getPingData() {
+  return new Array(45).fill(0).map((_, i) => {
+    const date = new Date(new Date().getTime() - i * 24 * 60 * 60 * 1000);
+    return {
+      day: date.toISOString(),
+      ok: 8640,
+      count: 8640,
+    };
+  });
 }

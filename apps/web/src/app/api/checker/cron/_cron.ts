@@ -1,16 +1,21 @@
-import type { NextRequest } from "next/server";
-import type { SignedInAuthObject } from "@clerk/nextjs/api";
 import { CloudTasksClient } from "@google-cloud/tasks";
 import type { google } from "@google-cloud/tasks/build/protos/protos";
-import type { z } from "zod";
+import type { NextRequest } from "next/server";
+import { z } from "zod";
 
-import { createTRPCContext } from "@openstatus/api";
-import { edgeRouter } from "@openstatus/api/src/edge";
+import { and, db, eq, gte, lte, notInArray } from "@openstatus/db";
 import type { MonitorStatus } from "@openstatus/db/src/schema";
-import { selectMonitorSchema } from "@openstatus/db/src/schema";
+import {
+  maintenance,
+  maintenancesToMonitors,
+  monitor,
+  monitorStatusTable,
+  selectMonitorSchema,
+  selectMonitorStatusSchema,
+} from "@openstatus/db/src/schema";
 
 import { env } from "@/env";
-import type { payloadSchema } from "../schema";
+import type { httpPayloadSchema, tpcPayloadSchema } from "@openstatus/utils";
 
 const periodicityAvailable = selectMonitorSchema.pick({ periodicity: true });
 
@@ -27,6 +32,7 @@ export const isAuthorizedDomain = (url: string) => {
 
 export const cron = async ({
   periodicity,
+  // biome-ignore lint/correctness/noUnusedVariables: <explanation>
   req,
 }: z.infer<typeof periodicityAvailable> & { req: NextRequest }) => {
   const client = new CloudTasksClient({
@@ -42,30 +48,65 @@ export const cron = async ({
     periodicity,
   );
 
-  console.log(`Start cron for ${periodicity}`);
   const timestamp = Date.now();
 
-  const ctx = createTRPCContext({ req, serverSideCall: true });
-  ctx.auth = { userId: "cron" } as SignedInAuthObject;
-  const caller = edgeRouter.createCaller(ctx);
+  const currentMaintenance = db
+    .select({ id: maintenance.id })
+    .from(maintenance)
+    .where(
+      and(lte(maintenance.from, new Date()), gte(maintenance.to, new Date())),
+    )
+    .as("currentMaintenance");
 
-  const monitors = await caller.monitor.getMonitorsForPeriodicity({
-    periodicity: periodicity,
-  });
+  const currentMaintenanceMonitors = db
+    .select({ id: maintenancesToMonitors.monitorId })
+    .from(maintenancesToMonitors)
+    .innerJoin(
+      currentMaintenance,
+      eq(maintenancesToMonitors.maintenanceId, currentMaintenance.id),
+    );
 
+  const result = await db
+    .select()
+    .from(monitor)
+    .where(
+      and(
+        eq(monitor.periodicity, periodicity),
+        eq(monitor.active, true),
+        notInArray(monitor.id, currentMaintenanceMonitors),
+      ),
+    )
+    .all();
+
+  console.log(`Start cron for ${periodicity}`);
+
+  const monitors = z.array(selectMonitorSchema).safeParse(result);
   const allResult = [];
+  if (!monitors.success) {
+    console.error(`Error while fetching the monitors ${monitors.error.errors}`);
+    throw new Error("Error while fetching the monitors");
+  }
 
-  for (const row of monitors) {
-    const selectedRegions = row.regions.length > 1 ? row.regions : ["auto"];
+  for (const row of monitors.data) {
+    const selectedRegions = row.regions.length > 0 ? row.regions : ["ams"];
 
-    const monitorStatus = await caller.monitor.getMonitorStatusByMonitorId({
-      monitorId: row.id,
-    });
+    const result = await db
+      .select()
+      .from(monitorStatusTable)
+      .where(eq(monitorStatusTable.monitorId, row.id))
+      .all();
+    const monitorStatus = z.array(selectMonitorStatusSchema).safeParse(result);
+    if (!monitorStatus.success) {
+      console.error(
+        `Error while fetching the monitor status ${monitorStatus.error.errors}`,
+      );
+      continue;
+    }
 
     for (const region of selectedRegions) {
       const status =
-        monitorStatus.find((m) => region === m.region)?.status || "active";
-      const response = await createCronTask({
+        monitorStatus.data.find((m) => region === m.region)?.status || "active";
+      const response = createCronTask({
         row,
         timestamp,
         client,
@@ -77,7 +118,7 @@ export const cron = async ({
       if (periodicity === "30s") {
         // we schedule another task in 30s
         const scheduledAt = timestamp + 30 * 1000;
-        const response = await createCronTask({
+        const response = createCronTask({
           row,
           timestamp: scheduledAt,
           client,
@@ -89,8 +130,15 @@ export const cron = async ({
       }
     }
   }
-  await Promise.all(allResult);
-  console.log(`End cron for ${periodicity} with ${allResult.length} jobs`);
+
+  const allRequests = await Promise.allSettled(allResult);
+
+  const success = allRequests.filter((r) => r.status === "fulfilled").length;
+  const failed = allRequests.filter((r) => r.status === "rejected").length;
+
+  console.log(
+    `End cron for ${periodicity} with ${allResult.length} jobs with ${success} success and ${failed} failed`,
+  );
 };
 // timestamp needs to be in ms
 const createCronTask = async ({
@@ -108,16 +156,44 @@ const createCronTask = async ({
   status: MonitorStatus;
   region: string;
 }) => {
-  const payload: z.infer<typeof payloadSchema> = {
-    workspaceId: String(row.workspaceId),
-    monitorId: String(row.id),
-    url: row.url,
-    method: row.method || "GET",
-    cronTimestamp: timestamp,
-    body: row.body,
-    headers: row.headers,
-    status: status,
-  };
+  let payload:
+    | z.infer<typeof httpPayloadSchema>
+    | z.infer<typeof tpcPayloadSchema>
+    | null = null;
+  //
+  if (row.jobType === "http") {
+    payload = {
+      workspaceId: String(row.workspaceId),
+      monitorId: String(row.id),
+      url: row.url,
+      method: row.method || "GET",
+      cronTimestamp: timestamp,
+      body: row.body,
+      headers: row.headers,
+      status: status,
+      assertions: row.assertions ? JSON.parse(row.assertions) : null,
+      degradedAfter: row.degradedAfter,
+      timeout: row.timeout,
+      trigger: "cron",
+    };
+  }
+  if (row.jobType === "tcp") {
+    payload = {
+      workspaceId: String(row.workspaceId),
+      monitorId: String(row.id),
+      uri: row.url,
+      status: status,
+      assertions: row.assertions ? JSON.parse(row.assertions) : null,
+      cronTimestamp: timestamp,
+      degradedAfter: row.degradedAfter,
+      timeout: row.timeout,
+      trigger: "cron",
+    };
+  }
+
+  if (!payload) {
+    throw new Error("Invalid jobType");
+  }
 
   const newTask: google.cloud.tasks.v2beta3.ITask = {
     httpRequest: {
@@ -127,7 +203,7 @@ const createCronTask = async ({
         Authorization: `Basic ${env.CRON_SECRET}`,
       },
       httpMethod: "POST",
-      url: "https://openstatus-checker.fly.dev/checker",
+      url: generateUrl({ row }),
       body: Buffer.from(JSON.stringify(payload)).toString("base64"),
     },
     scheduleTime: {
@@ -136,6 +212,16 @@ const createCronTask = async ({
   };
 
   const request = { parent: parent, task: newTask };
-  const [response] = await client.createTask(request);
-  return response;
+  return client.createTask(request);
 };
+
+function generateUrl({ row }: { row: z.infer<typeof selectMonitorSchema> }) {
+  switch (row.jobType) {
+    case "http":
+      return `https://openstatus-checker.fly.dev/checker/http?monitor_id=${row.id}`;
+    case "tcp":
+      return `https://openstatus-checker.fly.dev/checker/tcp?monitor_id=${row.id}`;
+    default:
+      throw new Error("Invalid jobType");
+  }
+}

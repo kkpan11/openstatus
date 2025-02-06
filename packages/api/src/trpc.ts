@@ -1,15 +1,22 @@
-import type { NextRequest } from "next/server";
-import type {
-  SignedInAuthObject,
-  SignedOutAuthObject,
-} from "@clerk/nextjs/api";
-import { getAuth } from "@clerk/nextjs/server";
-import { inferAsyncReturnType, initTRPC, TRPCError } from "@trpc/server";
+import { TRPCError, initTRPC } from "@trpc/server";
+import { type NextRequest, after } from "next/server";
 import superjson from "superjson";
 import { ZodError } from "zod";
 
+import {
+  type EventProps,
+  type IdentifyProps,
+  parseInputToProps,
+  setupAnalytics,
+} from "@openstatus/analytics";
 import { db, eq, schema } from "@openstatus/db";
 import type { User, Workspace } from "@openstatus/db/src/schema";
+
+// TODO: create a package for this
+import {
+  type DefaultSession as Session,
+  auth,
+} from "../../../apps/web/src/lib/auth";
 
 /**
  * 1. CONTEXT
@@ -21,10 +28,19 @@ import type { User, Workspace } from "@openstatus/db/src/schema";
  *
  */
 type CreateContextOptions = {
-  auth: SignedInAuthObject | SignedOutAuthObject | null;
+  session: Session | null;
   workspace?: Workspace | null;
   user?: User | null;
   req?: NextRequest;
+  metadata?: {
+    userAgent?: string;
+    location?: string;
+  };
+};
+
+type Meta = {
+  track?: EventProps;
+  trackProps?: string[];
 };
 
 /**
@@ -48,23 +64,30 @@ export const createInnerTRPCContext = (opts: CreateContextOptions) => {
  * process every request that goes through your tRPC endpoint
  * @link https://trpc.io/docs/context
  */
-export const createTRPCContext = (opts: {
+export const createTRPCContext = async (opts: {
   req: NextRequest;
   serverSideCall?: boolean;
 }) => {
-  const auth = !opts.serverSideCall ? getAuth(opts.req) : null;
+  const session = await auth();
   const workspace = null;
   const user = null;
 
   return createInnerTRPCContext({
-    auth,
+    session,
     workspace,
     user,
     req: opts.req,
+    metadata: {
+      userAgent: opts.req.headers.get("user-agent") ?? undefined,
+      location:
+        opts.req.headers.get("x-forwarded-for") ??
+        process.env.VERCEL_REGION ??
+        undefined,
+    },
   });
 };
 
-export type Context = inferAsyncReturnType<typeof createTRPCContext>;
+export type Context = Awaited<ReturnType<typeof createTRPCContext>>;
 
 /**
  * 2. INITIALIZATION
@@ -72,19 +95,22 @@ export type Context = inferAsyncReturnType<typeof createTRPCContext>;
  * This is where the trpc api is initialized, connecting the context and
  * transformer
  */
-export const t = initTRPC.context<typeof createTRPCContext>().create({
-  transformer: superjson,
-  errorFormatter({ shape, error }) {
-    return {
-      ...shape,
-      data: {
-        ...shape.data,
-        zodError:
-          error.cause instanceof ZodError ? error.cause.flatten() : null,
-      },
-    };
-  },
-});
+export const t = initTRPC
+  .context<Context>()
+  .meta<Meta>()
+  .create({
+    transformer: superjson,
+    errorFormatter({ shape, error }) {
+      return {
+        ...shape,
+        data: {
+          ...shape.data,
+          zodError:
+            error.cause instanceof ZodError ? error.cause.flatten() : null,
+        },
+      };
+    },
+  });
 
 /**
  * 3. ROUTER & PROCEDURE (THE IMPORTANT BIT)
@@ -113,8 +139,9 @@ export const publicProcedure = t.procedure;
  * Reusable middleware that enforces users are logged in before running the
  * procedure
  */
-const enforceUserIsAuthed = t.middleware(async ({ ctx, next }) => {
-  if (!ctx.auth?.userId) {
+const enforceUserIsAuthed = t.middleware(async (opts) => {
+  const { ctx } = opts;
+  if (!ctx.session?.user?.id) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }
 
@@ -123,7 +150,7 @@ const enforceUserIsAuthed = t.middleware(async ({ ctx, next }) => {
   //  * comparing the `user.tenantId` to clerk's `auth.userId`
   //  */
   const userAndWorkspace = await db.query.user.findFirst({
-    where: eq(schema.user.tenantId, ctx.auth.userId),
+    where: eq(schema.user.id, Number(ctx.session.user.id)),
     with: {
       usersToWorkspaces: {
         with: {
@@ -172,17 +199,46 @@ const enforceUserIsAuthed = t.middleware(async ({ ctx, next }) => {
   const user = schema.selectUserSchema.parse(userProps);
   const workspace = schema.selectWorkspaceSchema.parse(activeWorkspace);
 
-  return next({
-    ctx: {
-      ...ctx,
-      auth: {
-        ...ctx.auth,
-        userId: ctx.auth.userId,
-      },
-      user,
-      workspace,
-    },
+  const result = await opts.next({ ctx: { ...ctx, user, workspace } });
+
+  if (process.env.NODE_ENV === "test") {
+    return result;
+  }
+
+  // REMINDER: We only track the event if the request was successful
+  if (!result.ok) {
+    return result;
+  }
+
+  // REMINDER: We only track the event if the request was successful
+  // REMINDER: We are not blocking the request
+  after(async () => {
+    const { ctx, meta, getRawInput } = opts;
+
+    if (meta?.track) {
+      let identify: IdentifyProps = {
+        userAgent: ctx.metadata?.userAgent,
+        location: ctx.metadata?.location,
+      };
+
+      if (user && workspace) {
+        identify = {
+          userId: `usr_${user.id}`,
+          email: user.email || undefined,
+          workspaceId: String(workspace.id),
+          plan: workspace.plan,
+        };
+      }
+
+      const analytics = await setupAnalytics(identify);
+      const rawInput = await getRawInput();
+      const additionalProps = parseInputToProps(rawInput, meta.trackProps);
+
+      await analytics.track({ ...meta.track, ...additionalProps });
+    }
   });
+
+  return result;
 });
 
 /**
@@ -193,9 +249,10 @@ export const formdataMiddleware = t.middleware(async (opts) => {
   if (!formData) throw new TRPCError({ code: "BAD_REQUEST" });
 
   return opts.next({
-    rawInput: formData,
+    input: formData,
   });
 });
+
 /**
  * Protected (authed) procedure
  *
@@ -206,27 +263,3 @@ export const formdataMiddleware = t.middleware(async (opts) => {
  * @see https://trpc.io/docs/procedures
  */
 export const protectedProcedure = t.procedure.use(enforceUserIsAuthed);
-
-/**
- * Reusable middleware that enforces only cron before running the
- * procedure
- */
-const enforeUserIsCron = t.middleware(async ({ ctx, next }) => {
-  if (!ctx.auth?.userId || ctx.auth.userId !== "cron") {
-    throw new TRPCError({ code: "UNAUTHORIZED" });
-  }
-
-  return next({
-    ctx: {
-      auth: {
-        ...ctx.auth,
-        userId: ctx.auth.userId,
-      },
-    },
-  });
-});
-
-/**
- * Protected (cron) procedure
- */
-export const cronProcedure = t.procedure.use(enforeUserIsCron);

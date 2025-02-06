@@ -1,7 +1,7 @@
-import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
+import Link from "next/link";
 
-import { Button } from "@openstatus/ui";
+import { Button } from "@openstatus/ui/src/components/button";
 
 import { Shell } from "@/components/dashboard/shell";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,7 @@ export function Card({
   return (
     <Shell
       className={cn(
-        "hover:dark:border-card-foreground/30 group flex flex-col gap-3 hover:shadow",
+        "group flex flex-col gap-3 hover:shadow hover:dark:border-card-foreground/30",
         shellClassName,
         className,
       )}
@@ -53,8 +53,8 @@ export function Card({
             Learn more
           </Link>
         </Button>
-        <div className="border-border bg-background rounded-full border p-2 transition-transform duration-200 group-hover:-rotate-12">
-          {Icon && <Icon className="text-muted-foreground h-5 w-5" />}
+        <div className="group-hover:-rotate-12 rounded-full border border-border bg-background p-2 transition-transform duration-200">
+          {Icon && <Icon className="h-5 w-5 text-muted-foreground" />}
         </div>
       </div>
     </Shell>

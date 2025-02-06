@@ -1,0 +1,136 @@
+effective: |
+  ignore:
+  - node_modules
+  - /apps/docs
+  - /apps/screenshot-service
+  - /apps/server
+  - /apps/web
+  - /packages/analytics
+  - /packages/api
+  - /packages/error
+  - /packages/notifications
+  - /packages/tinybird
+  - /packages/tracker
+  builders:
+    install:
+      fromImage:
+        path: oven/bun
+        digest: sha256:e9382fda475d1ff0a939e925db3ca5a91b3b26cd71f23410dc5363262384bbc2
+      workdir: /app/
+      run:
+      - bun install --production --ignore-scripts --frozen-lockfile --verbose
+      cache:
+      - target: /root/.bun/install/cache
+      bind:
+      - target: package.json
+        source: package.json
+      - target: apps/workflows/package.json
+        source: apps/workflows/package.json
+      - target: packages/assertions/package.json
+        source: packages/assertions/package.json
+      - target: packages/db/package.json
+        source: packages/db/package.json
+      - target: packages/emails/package.json
+        source: packages/emails/package.json
+      - target: packages/utils/package.json
+        source: packages/utils/package.json
+      - target: packages/tsconfig/package.json
+        source: packages/tsconfig/package.json
+      - target: packages/upstash/package.json
+        source: packages/upstash/package.json
+    build:
+      fromImage:
+        path: oven/bun
+        digest: sha256:e9382fda475d1ff0a939e925db3ca5a91b3b26cd71f23410dc5363262384bbc2
+      workdir: /app/apps/workflows
+      env:
+        NODE_ENV: production
+      copy:
+      - paths:
+        - .
+        target: /app/
+      - fromBuilder: install
+        paths:
+        - /app/node_modules
+        target: /app/node_modules
+      run:
+      - bun build --compile --sourcemap --format=cjs src/index.ts --outfile=app
+  fromImage:
+    path: debian
+    digest: sha256:e831d9a884d63734fe3dd9c491ed9a5a3d4c6a6d32c5b14f2067357c49b0b7e1
+  copy:
+  - fromBuilder: build
+    paths:
+    - /app/apps/workflows/app
+    target: /bin/
+    chmod: '555'
+  entrypoint:
+  - /bin/app
+  expose:
+  - port: 3000
+images:
+  registry.hub.docker.com:443:
+    library:
+      debian:
+        bullseye-slim:
+          digest: sha256:e831d9a884d63734fe3dd9c491ed9a5a3d4c6a6d32c5b14f2067357c49b0b7e1
+    oven:
+      bun:
+        latest:
+          digest: sha256:e9382fda475d1ff0a939e925db3ca5a91b3b26cd71f23410dc5363262384bbc2
+resources:
+  dofigen.yml:
+    hash: 48a9d086b070600575e9867af0c63f2bbcfd301c867121e671fc771ae50f34dc
+    content: |
+      ignore:
+        - node_modules
+        - /apps/docs
+        - /apps/screenshot-service
+        - /apps/server
+        - /apps/web
+        - /packages/analytics
+        - /packages/api
+        - /packages/error
+        - /packages/notifications
+        - /packages/tinybird
+        - /packages/tracker
+      builders:
+        install:
+          fromImage: oven/bun
+          workdir: /app/
+          # Copy project
+          bind:
+            - package.json
+            - apps/workflows/package.json
+            - packages/assertions/package.json
+            - packages/db/package.json
+            - packages/emails/package.json
+            - packages/utils/package.json
+            - packages/tsconfig/package.json
+            - packages/upstash/package.json
+
+          # Install dependencies
+          run: bun install --production --ignore-scripts --frozen-lockfile --verbose
+          cache:
+            - /root/.bun/install/cache
+        build:
+          fromImage: oven/bun
+          workdir: /app/apps/workflows
+          copy:
+            - . /app/
+            - fromBuilder: install
+              source: /app/node_modules
+              target: /app/node_modules
+            #  Should set env to production here
+          # Compile the TypeScript application
+          env:
+            NODE_ENV: production
+          run: bun build --compile --sourcemap --format=cjs src/index.ts --outfile=app
+      fromImage: debian:bullseye-slim
+      copy:
+        - fromBuilder: build
+          source: /app/apps/workflows/app
+          target: /bin/
+          chmod: "555"
+      expose: 3000
+      entrypoint: /bin/app

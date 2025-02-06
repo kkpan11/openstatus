@@ -1,17 +1,17 @@
 // Shamelessly stolen from dub.co
 
-import { WorkspacePlan } from "@openstatus/db/src/schema";
+import type { WorkspacePlan } from "@openstatus/db/src/schema";
 
 export const getPlanFromPriceId = (priceId: string) => {
   const env =
     process.env.NEXT_PUBLIC_VERCEL_ENV === "production" ? "production" : "test";
-  return PLANS.find((plan) => plan.price.monthly.priceIds[env] === priceId)!;
+  return PLANS.find((plan) => plan.price.monthly.priceIds[env] === priceId);
 };
 
 export const getPriceIdForPlan = (plan: WorkspacePlan) => {
   const env =
     process.env.NEXT_PUBLIC_VERCEL_ENV === "production" ? "production" : "test";
-  return PLANS.find((p) => p.plan === plan)!.price.monthly.priceIds[env];
+  return PLANS.find((p) => p.plan === plan)?.price.monthly.priceIds[env];
 };
 export const PLANS = [
   {
@@ -20,7 +20,7 @@ export const PLANS = [
       monthly: {
         priceIds: {
           test: "price_1NdurjBXJcTfzsyJdAzIxXnT",
-          production: "price_1OUvJvBXJcTfzsyJMA07Uew7",
+          production: "price_1PdJ3lBXJcTfzsyJHgqcfVG9",
         },
       },
     },
@@ -31,7 +31,7 @@ export const PLANS = [
       monthly: {
         priceIds: {
           test: "price_1OVHQDBXJcTfzsyJjfiXl10Y",
-          production: "price_1OWM4TBXJcTfzsyJBdu71AhE",
+          production: "price_1PdJ5MBXJcTfzsyJqWXeMUEQ",
         },
       },
     },
@@ -42,7 +42,7 @@ export const PLANS = [
       monthly: {
         priceIds: {
           test: "price_1OVHPlBXJcTfzsyJvPlB1kNb",
-          production: "price_1OWM5kBXJcTfzsyJ6Z2bUWcQ",
+          production: "price_1PiBNnBXJcTfzsyJu65D9wfN",
         },
       },
     },

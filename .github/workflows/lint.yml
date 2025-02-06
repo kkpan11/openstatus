@@ -1,67 +1,41 @@
 # https://github.com/kentcdodds/kentcdodds.com/blob/main/.github/workflows/deployment.yml
-name: Code Check
+name: autofix.ci # needed to securely identify the workflow
 on:
-  push:
-    branches:
-      - "main"
   pull_request:
-    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 
 jobs:
-  lint:
-    name: ⬣ ESLint
+  autofix:
+    name: autofix
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
     steps:
       - name: ⬇️ Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 10.0.0
 
       - name: ⎔ Setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
           cache: "pnpm"
 
       - name: 📥 Download deps
         run: pnpm install
 
       - name: 🔬 Lint
-        run: pnpm lint
-
-  prettier:
-    name: 💅 Prettier
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    env:
-      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
-      TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
-
-    steps:
-      - name: ⬇️ Checkout repo
-        uses: actions/checkout@v3
-
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v2
+        run: pnpm format
+      - name: Apply fixes
+        uses: autofix-ci/action@dd55f44df8f7cdb7a6bf74c78677eb8acd40cd0a
         with:
-          version: 8
-
-      - name: ⎔ Setup node
-        uses: actions/setup-node@v3
-        with:
-          node-version: 18
-          cache: "pnpm"
-
-      - name: 📥 Download deps
-        run: pnpm install
-
-      - name: 💅 Prettier check
-        run: pnpm format:check
+          commit-message: 'ci: apply automated fixes'

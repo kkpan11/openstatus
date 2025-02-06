@@ -2,9 +2,10 @@ import { and, db, eq } from "@openstatus/db";
 import { page, pageSubscriber } from "@openstatus/db/src/schema";
 
 export async function GET(
-  request: Request,
-  { params }: { params: { domain: string; token: string } },
+  _request: Request,
+  props: { params: Promise<{ domain: string; token: string }> },
 ) {
+  const params = await props.params;
   const pageId = await db
     .select()
     .from(page)

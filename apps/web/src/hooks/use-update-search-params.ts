@@ -1,6 +1,10 @@
-import * as React from "react";
 import { useSearchParams } from "next/navigation";
+import * as React from "react";
 
+/**
+ *
+ * @deprecated use `nuqs` instead
+ */
 export default function useUpdateSearchParams() {
   const searchParams = useSearchParams();
 

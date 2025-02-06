@@ -1,106 +1,104 @@
-import * as React from "react";
 import { notFound } from "next/navigation";
-import { endOfDay, startOfDay } from "date-fns";
-import * as z from "zod";
+import * as React from "react";
 
-import { StatusDot } from "@/components/monitor/status-dot";
-import { getResponseGraphData } from "@/lib/tb";
-import { api } from "@/trpc/server";
-import { DatePickerPreset } from "../_components/date-picker-preset";
-import { IntervalPreset } from "../_components/interval-preset";
-import { QuantilePreset } from "../_components/quantile-preset";
+import { type Region, flyRegions } from "@openstatus/db/src/schema/constants";
+import { Separator } from "@openstatus/ui";
+
+import { CombinedChartWrapper } from "@/components/monitor-charts/combined-chart-wrapper";
+import { ButtonReset } from "@/components/monitor-dashboard/button-reset";
+import { DatePickerPreset } from "@/components/monitor-dashboard/date-picker-preset";
+import { Metrics } from "@/components/monitor-dashboard/metrics";
+import { getMinutesByInterval, periods } from "@/lib/monitor/utils";
+import { getPreferredSettings } from "@/lib/preferred-settings/server";
 import {
-  getDateByPeriod,
-  getMinutesByInterval,
-  intervals,
-  periods,
-  quantiles,
-} from "../utils";
-import { ChartWrapper } from "./_components/chart-wrapper";
+  prepareMetricByIntervalByPeriod,
+  prepareMetricByRegionByPeriod,
+  prepareMetricsByPeriod,
+} from "@/lib/tb";
+import { api } from "@/trpc/server";
+import {
+  DEFAULT_INTERVAL,
+  DEFAULT_PERIOD,
+  DEFAULT_QUANTILE,
+  searchParamsCache,
+} from "./search-params";
 
-/**
- * allowed URL search params
- */
-const searchParamsSchema = z.object({
-  statusCode: z.coerce.number().optional(),
-  cronTimestamp: z.coerce.number().optional(),
-  quantile: z.enum(quantiles).optional().default("p95"),
-  interval: z.enum(intervals).optional().default("30m"),
-  period: z.enum(periods).optional().default("1d"),
-  fromDate: z.coerce
-    .number()
-    .optional()
-    .default(startOfDay(new Date()).getTime()),
-  toDate: z.coerce.number().optional().default(endOfDay(new Date()).getTime()),
-});
-
-export default async function Page({
-  params,
-  searchParams,
-}: {
-  params: { workspaceSlug: string; id: string };
-  searchParams: { [key: string]: string | string[] | undefined };
+export default async function Page(props: {
+  params: Promise<{ workspaceSlug: string; id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const id = params.id;
-  const search = searchParamsSchema.safeParse(searchParams);
+  const search = searchParamsCache.parse(searchParams);
+
+  const preferredSettings = getPreferredSettings();
 
   const monitor = await api.monitor.getMonitorById.query({
     id: Number(id),
   });
 
-  if (!monitor || !search.success) {
-    return notFound();
-  }
+  if (!monitor) return notFound();
 
-  const date = getDateByPeriod(search.data.period);
-  const intervalMinutes = getMinutesByInterval(search.data.interval);
+  const { period, quantile, interval, regions } = search;
+  const type = monitor.jobType as "http" | "tcp";
+
+  // TODO: work it out easier
+  const intervalMinutes = getMinutesByInterval(interval);
   const periodicityMinutes = getMinutesByInterval(monitor.periodicity);
 
   const isQuantileDisabled = intervalMinutes <= periodicityMinutes;
   const minutes = isQuantileDisabled ? periodicityMinutes : intervalMinutes;
 
-  const data = await getResponseGraphData({
-    monitorId: id,
-    ...search.data,
-    /**
-     *
-     */
-    fromDate: date.from.getTime(),
-    toDate: date.to.getTime(),
-    interval: minutes,
-  });
+  const [metrics, data, metricsByRegion] = await Promise.all([
+    prepareMetricsByPeriod(period, type).getData({
+      monitorId: id,
+    }),
+    prepareMetricByIntervalByPeriod(period, type).getData({
+      monitorId: id,
+      interval: minutes,
+    }),
+    prepareMetricByRegionByPeriod(period, type).getData({
+      monitorId: id,
+    }),
+  ]);
 
-  if (!data) return null;
+  if (!data || !metrics || !metricsByRegion) return null;
 
-  const { period, quantile, interval } = search.data;
+  const isDirty =
+    period !== DEFAULT_PERIOD ||
+    quantile !== DEFAULT_QUANTILE ||
+    interval !== DEFAULT_INTERVAL ||
+    flyRegions.length !== regions.length;
+
+  // GET VALUES FOR BLOG POST
+  // console.log(
+  //   JSON.stringify({
+  //     regions,
+  //     data: groupDataByTimestamp(data, period, quantile),
+  //     metricsByRegion,
+  //   }),
+  // );
 
   return (
     <div className="grid gap-4">
-      <div>
-        <p className="text-muted-foreground inline-flex items-center gap-2 text-sm">
-          <StatusDot status={monitor.status} active={monitor.active} />
-          <span>
-            {monitor.active
-              ? monitor.status === "active"
-                ? "up"
-                : "down"
-              : "pause"}{" "}
-            · checked every{" "}
-            <code className="text-foreground">{monitor.periodicity}</code>
-          </span>
-        </p>
+      <div className="flex justify-between gap-2">
+        <DatePickerPreset defaultValue={period} values={periods} />
+        {isDirty ? <ButtonReset /> : null}
       </div>
-      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        {/* IDEA: add tooltip for description */}
-        <DatePickerPreset period={period} />
-        <QuantilePreset quantile={quantile} disabled={isQuantileDisabled} />
-        <IntervalPreset interval={interval} />
-      </div>
-      <ChartWrapper period={period} quantile={quantile} data={data} />
-      <p className="text-muted-foreground text-center text-xs">
-        Select your preferred time range, percentile for insights, and time
-        interval for granular analysis.
-      </p>
+      <Metrics metrics={metrics.data} period={period} showErrorLink />
+      <Separator className="my-8" />
+      <CombinedChartWrapper
+        data={data.data}
+        period={period}
+        quantile={quantile}
+        interval={interval}
+        regions={regions.length ? (regions as Region[]) : monitor.regions} // FIXME: not properly reseted after filtered
+        monitor={monitor}
+        isQuantileDisabled={isQuantileDisabled}
+        metricsByRegion={metricsByRegion.data}
+        preferredSettings={preferredSettings}
+      />
     </div>
   );
 }

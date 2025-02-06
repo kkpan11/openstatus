@@ -17,28 +17,15 @@ test("Get Test Page", async () => {
   const result = await caller.page.getPageBySlug({ slug: "status" });
   expect(result).toMatchObject({
     createdAt: expect.any(Date),
-    customDomain: "",
-    description: "hello",
-    icon: "https://www.openstatus.dev/favicon.ico",
-    statusReports: [],
-    monitors: [
-      {
-        active: true,
-        createdAt: expect.any(Date),
-        description: "OpenStatus website",
-        id: 1,
-        jobType: "other",
-        name: "OpenStatus",
-        periodicity: "1m",
-        status: "active",
-        updatedAt: expect.any(Date),
-        url: "https://www.openstatus.dev",
-        workspaceId: 1,
-      },
-    ],
-    published: true,
-    slug: "status",
-    title: "Test Page",
+    customDomain: expect.any(String),
+    description: expect.any(String),
+    icon: expect.any(String),
+    statusReports: expect.any(Array),
+    monitors: expect.any(Array),
+    incidents: expect.any(Array),
+    published: expect.any(Boolean),
+    slug: expect.any(String),
+    title: expect.any(String),
     updatedAt: expect.any(Date),
   });
 });

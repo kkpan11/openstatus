@@ -2,21 +2,26 @@ import type { HTTPBatchLinkOptions, HTTPHeaders, TRPCLink } from "@trpc/client";
 import { httpBatchLink } from "@trpc/client";
 
 import type { AppRouter } from "@openstatus/api";
+import superjson from "superjson";
 
 const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
   const vc = process.env.VERCEL_URL;
   if (vc) return `https://${vc}`;
-  return `http://localhost:3000`;
+  return "http://localhost:3000";
 };
 
-const lambdas = ["clerkRouter", "stripeRouter"];
+const lambdas = ["stripeRouter", "rumRouter"];
 
-export const endingLink = (opts?: { headers?: HTTPHeaders }) =>
+export const endingLink = (opts?: {
+  headers?: HTTPHeaders | (() => HTTPHeaders | Promise<HTTPHeaders>);
+}) =>
   ((runtime) => {
     const sharedOpts = {
       headers: opts?.headers, // REMINDER: fails when trying to `getTotalActiveMonitors()`
-    } satisfies Partial<HTTPBatchLinkOptions>;
+      transformer: superjson,
+      // biome-ignore lint/suspicious/noExplicitAny: FIXME: remove any
+    } satisfies Partial<HTTPBatchLinkOptions<any>>;
 
     const edgeLink = httpBatchLink({
       ...sharedOpts,

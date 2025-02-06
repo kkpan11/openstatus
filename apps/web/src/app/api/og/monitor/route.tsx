@@ -1,18 +1,21 @@
-import { ImageResponse } from "next/server";
+import { ImageResponse } from "next/og";
+
+import { OSTinybird } from "@openstatus/tinybird";
 
 import { DESCRIPTION, TITLE } from "@/app/shared-metadata";
-import { getMonitorListData } from "@/lib/tb";
-import { convertTimezoneToGMT } from "@/lib/timezone";
+import { env } from "@/env";
 import { BasicLayout } from "../_components/basic-layout";
 import { Tracker } from "../_components/tracker";
-import { calSemiBold, interLight, interRegular, SIZE } from "../utils";
+import { SIZE, calSemiBold, interLight, interRegular } from "../utils";
+
+const tb = new OSTinybird(env.TINY_BIRD_API_KEY);
 
 export const runtime = "edge";
 
 export async function GET(req: Request) {
-  const interRegularData = await interRegular;
-  const interLightData = await interLight;
-  const calSemiBoldData = await calSemiBold;
+  const [interRegularData, interLightData, calSemiBoldData] = await Promise.all(
+    [interRegular, interLight, calSemiBold],
+  );
 
   const { searchParams } = new URL(req.url);
 
@@ -26,26 +29,21 @@ export async function GET(req: Request) {
   const monitorId =
     (searchParams.has("id") && searchParams.get("id")) || undefined;
 
-  const timezone = convertTimezoneToGMT();
+  // TODO: we need to pass the monitor type here
 
-  const data =
-    (monitorId &&
-      (await getMonitorListData({
-        monitorId,
-        timezone,
-      }))) ||
-    [];
+  const res = (monitorId &&
+    (await tb.httpStatus45d({
+      monitorId,
+    }))) || { data: [] };
 
   return new ImageResponse(
-    (
-      <BasicLayout
-        title={title}
-        description={description}
-        tw={data.length === 0 ? "mt-32" : undefined}
-      >
-        {Boolean(data.length) ? <Tracker data={data} /> : null}
-      </BasicLayout>
-    ),
+    <BasicLayout
+      title={title}
+      description={description}
+      tw={res.data.length === 0 ? "mt-32" : undefined}
+    >
+      {res.data.length ? <Tracker data={res.data} /> : null}
+    </BasicLayout>,
     {
       ...SIZE,
       fonts: [

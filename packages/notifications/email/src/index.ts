@@ -1,25 +1,24 @@
-import type { Monitor, Notification } from "@openstatus/db/src/schema";
+import {
+  type Monitor,
+  type Notification,
+  emailDataSchema,
+} from "@openstatus/db/src/schema";
 
 import { env } from "../env";
-import { EmailConfigurationSchema } from "./schema/config";
 
-export const send = async ({
-  monitor,
-  notification,
-  region,
-  statusCode,
-  message,
+async function send({
+  subject,
+  html,
+  email,
+  id,
+  type,
 }: {
-  monitor: Monitor;
-  notification: Notification;
-  statusCode?: number;
-  region: string;
-  message?: string;
-}) => {
-  // FIXME:
-  const config = EmailConfigurationSchema.parse(JSON.parse(notification.data));
-  const { email } = config;
-
+  subject: string;
+  html: string;
+  email: string;
+  id: number;
+  type: "recovered" | "alert" | "degraded";
+}) {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -29,15 +28,8 @@ export const send = async ({
     body: JSON.stringify({
       to: email,
       from: "Notifications <ping@openstatus.dev>",
-
-      subject: `Your monitor ${monitor.name} is down 🚨`,
-      html: `<p>Hi,<br><br>Your monitor ${
-        monitor.name
-      } is down in ${region}. </p><p>URL : ${monitor.url}</p> ${
-        statusCode
-          ? `<p>Status Code: ${statusCode}</p>`
-          : `<p>Error message: ${message}</p>`
-      }<p>OpenStatus 🏓 </p>`,
+      subject,
+      html,
     }),
   });
 
@@ -46,4 +38,101 @@ export const send = async ({
     console.log(data);
     // return NextResponse.json(data);
   }
+  if (!res.ok) {
+    console.log(`Error sending ${type} email ${id}`);
+  }
+}
+
+export const sendAlert = async ({
+  monitor,
+  notification,
+  statusCode,
+  message,
+  cronTimestamp,
+}: {
+  monitor: Monitor;
+  notification: Notification;
+  statusCode?: number;
+  message?: string;
+  incidentId?: string;
+  cronTimestamp: number;
+}) => {
+  const config = emailDataSchema.safeParse(JSON.parse(notification.data));
+
+  if (!config.success) return;
+
+  await send({
+    id: monitor.id,
+    type: "alert",
+    email: config.data.email,
+    subject: `🚨 Alert ${monitor.name}`,
+    html: `
+    <p>Hi,</p>
+    <p>Your monitor <strong>${monitor.name}</strong> is down.</p>
+    <p>URL: ${monitor.url}</p>
+      ${
+        statusCode
+          ? `<p>Status Code: ${statusCode}</p>`
+          : `<p>Error message: ${message}</p>`
+      }
+    <p>Cron Timestamp: ${cronTimestamp} (${new Date(cronTimestamp).toISOString()})</p>
+    <p>OpenStatus 🏓</p>`,
+  });
+};
+
+export const sendRecovery = async ({
+  monitor,
+  notification,
+}: {
+  monitor: Monitor;
+  notification: Notification;
+  statusCode?: number;
+  message?: string;
+  incidentId?: string;
+  cronTimestamp: number;
+}) => {
+  const config = emailDataSchema.safeParse(JSON.parse(notification.data));
+
+  if (!config.success) return;
+
+  send({
+    id: monitor.id,
+    type: "recovered",
+    email: config.data.email,
+    subject: `✅ Recovered ${monitor.name}`,
+    html: `
+      <p>Hi,</p>
+      <p>Your monitor <strong>${monitor.name}</strong> is up again.</p>
+      <p>URL: ${monitor.url}</p>
+      <p>OpenStatus 🏓</p>
+    `,
+  });
+};
+
+export const sendDegraded = async ({
+  monitor,
+  notification,
+}: {
+  monitor: Monitor;
+  notification: Notification;
+  statusCode?: number;
+  message?: string;
+  cronTimestamp: number;
+}) => {
+  const config = emailDataSchema.safeParse(JSON.parse(notification.data));
+
+  if (!config.success) return;
+
+  send({
+    id: monitor.id,
+    type: "degraded",
+    email: config.data.email,
+    subject: `⚠️ Degraded ${monitor.name}`,
+    html: `
+      <p>Hi,</p>
+      <p>Your monitor <strong>${monitor.name}</strong> is taking longer than expected to respond</p>
+      <p>URL: ${monitor.url}</p>
+      <p>OpenStatus 🏓</p>
+    `,
+  });
 };

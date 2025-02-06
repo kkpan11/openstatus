@@ -10,7 +10,7 @@ export type Feature = {
 export type FeatureDescription = {
   icon: ValidIcon;
   catchline: string;
-  description: string;
+  description: React.ReactNode;
   badge?: "Coming soon" | "New";
 };
 
@@ -37,7 +37,7 @@ export const cardConfig = {
         icon: "globe",
         catchline: "Latency Monitoring.",
         description:
-          "Monitor the latency of your endpoints from all over the world. We currently support all the continents.",
+          "Monitor the latency of your endpoints from all over the world. We support all the continents.",
       },
       {
         icon: "play",
@@ -50,7 +50,7 @@ export const cardConfig = {
         catchline: "Cron Monitoring.",
         badge: "Coming soon",
         description:
-          "Never let a cron job fail you. Get notified when a jobs did not run successfully.",
+          "Never let a cron job fail you. Get notified when a job did not run successfully.",
       },
     ],
   },
@@ -62,7 +62,7 @@ export const cardConfig = {
         icon: "puzzle",
         catchline: "Build trust",
         description:
-          "Showcase your reliability to your users, and reduce the numbers of customers service tickets.",
+          "Showcase your reliability to your users, and reduce the number of customer service tickets.",
       },
       {
         icon: "globe",
@@ -84,9 +84,9 @@ export const cardConfig = {
     features: [
       {
         icon: "sparkles",
-        catchline: "Connect.",
+        catchline: "Reduce fatigue.",
         description:
-          "Aggregate alerts from all your monitoring services (Grafana, Datadog) and use our AI to make them actionnable.",
+          "Reduce your alerts fatigue with automatic noise reduction.",
         badge: "Coming soon",
       },
       {
